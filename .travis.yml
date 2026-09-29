@@ -1,8 +1,28 @@
 language: node_js
-node_js:
-  - 13.8.0
 
-script: npm run build && npm run test
+# 17.1.3's devDependencies cannot install on the upstream-pinned Node 13.8.0
+# (rollup 4 needs >=18, bson 6 needs >=16.20.1), so both jobs install and build
+# on 20.12.0 - the runtime that packed the published tarball. The second job
+# then runs the mocha spec suite on Node 13.8.0 against that built lib.
+jobs:
+  include:
+    - name: "node 20.12.0: build + test (spec + types)"
+      node_js: 20.12.0
+      # Same as `npm run test` (test:spec && test:types), with mocha colours off
+      # so the pass/pending summary lines are plain text in the log.
+      script: npm run build && npm run test:spec -- --no-colors && npm run test:types
+    - name: "build on node 20.12.0, mocha spec suite on node 13.8.0"
+      node_js: 20.12.0
+      script:
+        - npm run build
+        # bson is a test-only devDependency (sift has no runtime deps); bson 6
+        # uses optional chaining, a SyntaxError on Node 13, so swap in bson 4.
+        - yarn add --dev bson@4.7.2
+        - nvm install 13.8.0
+        - node --version
+        # The excluded test's own fixture calls Array.prototype.at (Node >=16.6);
+        # it also fails on 13.8.0 against the original npm 17.1.3 lib.
+        - ./node_modules/.bin/mocha ./test -R spec --no-colors --grep 'that have properties in addition to indices' --invert
 
 notifications:
   email:
